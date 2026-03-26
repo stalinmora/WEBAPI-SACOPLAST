@@ -24,7 +24,11 @@ router.post('/work-schedule', async (req, res) => {
         s.start_time as start_time,
         s.end_time as end_time,
         'regular' as type,
-        NULL as reason
+        NULL as reason,
+        0 as hours_worked,
+        0 as expected_production,
+        0 as actual_production,
+        0 as efficiency_percentage
       FROM schedule_days sd
       INNER JOIN work_groups wg ON sd.group_id = wg.id
       INNER JOIN employees e ON e.id IN (
@@ -49,7 +53,11 @@ router.post('/work-schedule', async (req, res) => {
         s.start_time as start_time,
         s.end_time as end_time,
         'exception' as type,
-        se.reason as reason
+        se.reason as reason,
+        0 as hours_worked,
+        0 as expected_production,
+        0 as actual_production,
+        0 as efficiency_percentage
       FROM schedule_exceptions se
       INNER JOIN work_groups wg ON se.original_group_id = wg.id
       INNER JOIN employees e ON se.original_employee_id = e.id
@@ -60,22 +68,27 @@ router.post('/work-schedule', async (req, res) => {
       ORDER BY se.exception_date, s.start_time
     `;
 
-    // Consulta para obtener registros de eficiencia (días trabajados)
+    // Consulta para obtener registros de eficiencia (días trabajados con datos completos)
     const efficiencyQuery = `
       SELECT 
         e.nombre_operador as employee_name,
         wg.name as group_name,
         er.record_date as date,
-        'Eficiencia' as shift_name,
+        t.description as task_description,
+        NULL as shift_name,
         NULL as start_time,
         NULL as end_time,
         'efficiency' as type,
-        CONCAT('Horas: ', er.hours_worked, ', Tarea: ', t.description) as reason
+        CONCAT('Tarea: ', t.description) as reason,
+        er.hours_worked,
+        er.expected_production,
+        er.actual_production,
+        COALESCE(er.efficiency_percentage, 0) as efficiency_percentage
       FROM efficiency_records er
       INNER JOIN employees e ON er.employee_id = e.id
       LEFT JOIN tasks t ON er.task_id = t.id
-      LEFT JOIN employee_groups eg ON e.id = eg.employee_id
-      LEFT JOIN work_groups wg ON eg.group_id = wg.id
+      LEFT JOIN employee_groups eg ON e.id = eg.employee_id AND eg.status = 'active'
+      LEFT JOIN work_groups wg ON eg.group_id = wg.id AND wg.status = 'active'
       WHERE er.record_date BETWEEN $1 AND $2
       ${employee_id ? 'AND e.id = $3' : ''}
       ${group_id ? 'AND wg.id = ' + (employee_id ? '$4' : '$3') : ''}
@@ -139,11 +152,10 @@ router.post('/work-schedule', async (req, res) => {
       }
     });
   } catch (error) {
-    console.error.status(500).json({ message: 'Error del servidor' });
+    console.error(error);
+    res.status(500).json({ message: 'Error del servidor' });
   }
 });
-
-// OBTENER EMPLEADOS
 // OBTENER EMPLEADOS
 router.get('/employees', async (req, res) => {
   try {
