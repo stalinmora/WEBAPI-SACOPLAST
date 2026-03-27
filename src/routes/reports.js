@@ -4,7 +4,6 @@ import pool from '../config/db.js';
 const router = express.Router();
 
 // GENERAR REPORTE DE DIAS Y HORARIOS TRABAJADOS
-// GENERAR REPORTE DE DIAS Y HORARIOS TRABAJADOS
 router.post('/work-schedule', async (req, res) => {
   const { employee_id, group_id, start_date, end_date } = req.body;
 
@@ -156,6 +155,47 @@ router.post('/work-schedule', async (req, res) => {
     res.status(500).json({ message: 'Error del servidor' });
   }
 });
+
+// GENERAR REPORTE GLOBAL DE HORAS Y EFICIENCIA
+router.post('/global-work-schedule', async (req, res) => {
+  const { start_date, end_date } = req.body;
+
+  try {
+    // Validar fechas
+    if (!start_date || !end_date) {
+      return res.status(400).json({ message: 'Fecha inicio y fin son requeridas' });
+    }
+
+    // Consulta para obtener registros de eficiencia con horas y eficiencia
+    const efficiencyQuery = `
+      SELECT 
+        e.id as employee_id,
+        e.nombre_operador as employee_name,
+        e.cargo,
+        er.record_date as date,
+        er.hours_worked,
+        er.efficiency_percentage
+      FROM efficiency_records er
+      INNER JOIN employees e ON er.employee_id = e.id
+      WHERE er.record_date BETWEEN $1 AND $2
+      ORDER BY e.nombre_operador, er.record_date
+    `;
+
+    const result = await pool.query(efficiencyQuery, [start_date, end_date]);
+
+    res.json({
+      success: true,
+      reports: result.rows,
+      summary: {
+        total_records: result.rows.length
+      }
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error del servidor' });
+  }
+});
+
 // OBTENER EMPLEADOS
 router.get('/employees', async (req, res) => {
   try {
